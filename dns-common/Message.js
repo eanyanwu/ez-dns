@@ -7,6 +7,7 @@
  */
 
  import assert from 'assert';
+import { type } from 'os';
 
 const MESSAGE_HEADER_OFFSETS = {
     'ID': [0, 16],
@@ -50,10 +51,10 @@ class QuestionSection {
 
         this._buffer = buf;
 
-        const qTypeStart = getQtypeStart(buf);
+        const qTypeStart = computeNameFieldLength(buf);
 
         this._offsets = {
-            'QNAME' : [0, qTypeStart - 1],
+            'QNAME' : [0, qTypeStart],
             'QTYPE' : [qTypeStart, qTypeStart + 16],
             'QCLASS' : [ qTypeStart + 16, qTypeStart + 32],
         };
@@ -68,26 +69,57 @@ class QuestionSection {
     }
 }
 
-QuestionSection.getQTYPEStart = getQtypeStart;
 
 /**
- * Returns the index at which the QTYPE field starts.
+ * Resource record definition
  * 
- * This is useful because the field before it, QNAME is of variable length.
- * 
- * @param {Buffer} buf 
- * @param {number} start 
+ * RFC 1035 4.1.3
  */
-function getQtypeStart(buf, start = 0) {
+class ResourceRecord {
+    constructor(buf) {
+        assert(buf instanceof Buffer, `expected Buffer. got ${typeof buf}`);
+
+        this._buffer = buf;
+
+        const typeStart = computeNameFieldLength(buf);
+
+        this._offsets = {
+            'NAME' : [0, typeStart],
+            'TYPE' : [typeStart, typeStart + 16],
+            'CLASS' : [typeStart + 16, typeStart + 32],
+            'TTL' : [typeStart + 32, typeStart + 64],
+            'RDLENGTH' : [typeStart + 64, typeStart + 80]
+        };
+
+        const rdLength = this._offsets['RDLENGTH'];
+
+        this._offsets['RDATA'] = [typeStart + 80, typeStart + 80 + rdLength]
+    }
+
+    get(fieldName) {
+        assert(typeof fieldName === 'string', `expected string. got '${typeof fieldName}'`);
+
+        const offsets = this._offsets[fieldName.toUpperCase()];
+
+        return this._buffer.slice(offsets[0], offsets[1]);
+    }
+}
+
+/**
+ * Computes the length of the name field at the begining of the buffer
+ * 
+ * This is useful because name fields are usually of variable length 
+ * @param {Buffer} buf 
+ */
+function computeNameFieldLength(buf) {
     assert(buf instanceof Buffer, `expected Buffer. got ${typeof buf}`);
 
-    const labelLength = buf[start];
+    let nameLength = 0;
+    do {
+        let labelLength = buf[nameLength];
 
-    assert(labelLength <= 63, `label length must be 63 or less ${labelLength}`);
+        assert(labelLength <= 63, `label length must be 63 or less ${labelLength}`);
 
-    if (labelLength === 0) {
-        return start + 1;
-    } else {
-        getQtypeStart(buf, start + labelLength + 1);
-    }
+        nameLength += labelLength + 1;
+    } while (labelLength !== 0);
 }
