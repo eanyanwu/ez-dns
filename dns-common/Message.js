@@ -1,13 +1,54 @@
 // TODO: Implement message compression
 
-/**
- * Message Header definition
- * 
- * RFC 1035 4.1.1
- */
-
  import assert from 'assert';
-import { type } from 'os';
+
+ /**
+  * Message definition
+  * 
+  * RFC 1035 4.1
+  */
+class Message {
+    constructor(buf) {
+        assert(buf instanceof Buffer, `argument is not a Buffer. got ${typeof buf}`);
+
+        const header = new MessageHeader(buf.slice(0, 96));
+
+        this.countQuestions = header.get('QDCOUNT').readUInt16BE();
+        this.countAnswers = header.get('ANCOUNT').readUInt16BE();
+        this.countAuthority = header.get('NSCOUNT').readUInt16BE();
+        this.countAdditional = header.get('ARCOUNT').readUInt16BE();
+        this.questions = [];
+        this.answerRecords = [];
+        this.authorityRecords = [];
+        this.additionalRecords = [];
+
+        let restBytes = buf.slice(96);
+
+        for (let i = 0; i < this.countQuestions; i++) {
+            let question = new QuestionSection(restBytes);
+            this.questions.push(question);
+            restBytes = buf.slice(question.length);
+        }
+
+        for (let i = 0; i < this.countAnswers; i++) {
+            let answer = new ResourceRecord(restBytes);
+            this.answerRecords.push(answer);
+            restBytes = buf.slice(answer.length);
+        }
+
+        for (let i = 0; i < this.countAuthority; i ++) {
+            let authority = new ResourceRecord(restBytes);
+            this.authorityRecords.push(authority);
+            restBytes = buf.slice(authority.length);
+        }
+
+        for (let i = 0; i < this.countAdditional; i ++) {
+            let additional = new ResourceRecord(restBytes);
+            this.authorityRecords.push(additional);
+            restBytes = buf.slice(additional.length);
+        }
+    }
+}
 
 const MESSAGE_HEADER_OFFSETS = {
     'ID': [0, 16],
@@ -25,6 +66,11 @@ const MESSAGE_HEADER_OFFSETS = {
     'ARCOUNT' : [80, 96],
 };
 
+/**
+ * Message Header definition
+ * 
+ * RFC 1035 4.1.1
+ */
 class MessageHeader {
     constructor(buf) {
         assert(buf instanceof Buffer, `argument is not a Buffer. got ${typeof buf}`);
@@ -51,13 +97,15 @@ class QuestionSection {
 
         this._buffer = buf;
 
-        const qTypeStart = computeNameFieldLength(buf);
+        const qNameFieldLength = computeNameFieldLength(buf);
 
         this._offsets = {
-            'QNAME' : [0, qTypeStart],
-            'QTYPE' : [qTypeStart, qTypeStart + 16],
-            'QCLASS' : [ qTypeStart + 16, qTypeStart + 32],
+            'QNAME' : [0, qNameFieldLength],
+            'QTYPE' : [qNameFieldLength, qNameFieldLength + 16],
+            'QCLASS' : [ qNameFieldLength + 16, qNameFieldLength + 32],
         };
+
+        this.length = qNameFieldLength + 32;
     }
 
     get(fieldName) {
@@ -81,19 +129,21 @@ class ResourceRecord {
 
         this._buffer = buf;
 
-        const typeStart = computeNameFieldLength(buf);
+        const nameFieldLength = computeNameFieldLength(buf);
 
         this._offsets = {
-            'NAME' : [0, typeStart],
-            'TYPE' : [typeStart, typeStart + 16],
-            'CLASS' : [typeStart + 16, typeStart + 32],
-            'TTL' : [typeStart + 32, typeStart + 64],
-            'RDLENGTH' : [typeStart + 64, typeStart + 80]
+            'NAME' : [0, nameFieldLength],
+            'TYPE' : [nameFieldLength, nameFieldLength + 16],
+            'CLASS' : [nameFieldLength + 16, nameFieldLength + 32],
+            'TTL' : [nameFieldLength + 32, nameFieldLength + 64],
+            'RDLENGTH' : [nameFieldLength + 64, nameFieldLength + 80]
         };
 
         const rdLength = this._offsets['RDLENGTH'];
 
-        this._offsets['RDATA'] = [typeStart + 80, typeStart + 80 + rdLength]
+        this._offsets['RDATA'] = [nameFieldLength + 80, nameFieldLength + 80 + rdLength]
+
+        this.length = nameFieldLength + 80 + rdLength;
     }
 
     get(fieldName) {
@@ -115,11 +165,15 @@ function computeNameFieldLength(buf) {
     assert(buf instanceof Buffer, `expected Buffer. got ${typeof buf}`);
 
     let nameLength = 0;
-    do {
-        let labelLength = buf[nameLength];
+    let labelLength = 0;
 
-        assert(labelLength <= 63, `label length must be 63 or less ${labelLength}`);
+    do {
+        labelLength = buf[nameLength];
 
         nameLength += labelLength + 1;
     } while (labelLength !== 0);
+
+    return nameLength;
 }
+
+export { MessageHeader, QuestionSection, ResourceRecord, computeNameFieldLength};
