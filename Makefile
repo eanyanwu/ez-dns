@@ -1,2 +1,2 @@
 test :
-	./node_modules/mocha/bin/mocha 'packages/**/tests/*.js' --recursive
+	./node_modules/mocha/bin/mocha '**/tests/*.js' --recursive
