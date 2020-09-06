@@ -1,7 +1,13 @@
 import pkg from 'chai';
+import url from 'url';
+import path from 'path';
+import fs from 'fs';
+
 const { expect } = pkg;
 
-import { computeNameFieldLength } from '../Message.js';
+const __dirname = path.dirname(new URL(import.meta.url).pathname);
+
+import { computeNameFieldLength, readMessage } from '../Message.js';
 
 describe('computeNameFieldLength', function() {
     const testCases = [
@@ -15,4 +21,12 @@ describe('computeNameFieldLength', function() {
             expect(computeNameFieldLength(t.buf)).to.equal(t.len);
         });
     });
+});
+
+describe('Message', function() {
+    it('should correctly parse simple dns message header', function() {
+        const dnsBytes = fs.readFileSync(`${__dirname}/sample-files/test-dns-query.bin`);
+        const msg = readMessage(dnsBytes);
+        console.log(msg);
+    })
 });

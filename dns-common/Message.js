@@ -2,121 +2,155 @@
 
  import assert from 'assert';
 
- /**
-  * Message definition
-  * 
-  * RFC 1035 4.1
-  */
-class Message {
-    constructor(buf) {
-        assert(buf instanceof Buffer, `argument is not a Buffer. got ${typeof buf}`);
-
-        const header = new MessageHeader(buf.slice(0, 96));
-
-        this.countQuestions = header.get('QDCOUNT').readUInt16BE();
-        this.countAnswers = header.get('ANCOUNT').readUInt16BE();
-        this.countAuthority = header.get('NSCOUNT').readUInt16BE();
-        this.countAdditional = header.get('ARCOUNT').readUInt16BE();
-        this.questions = [];
-        this.answerRecords = [];
-        this.authorityRecords = [];
-        this.additionalRecords = [];
-
-        let restBytes = buf.slice(96);
-
-        for (let i = 0; i < this.countQuestions; i++) {
-            let question = new QuestionSection(restBytes);
-            this.questions.push(question);
-            restBytes = buf.slice(question.length);
-        }
-
-        for (let i = 0; i < this.countAnswers; i++) {
-            let answer = new ResourceRecord(restBytes);
-            this.answerRecords.push(answer);
-            restBytes = buf.slice(answer.length);
-        }
-
-        for (let i = 0; i < this.countAuthority; i ++) {
-            let authority = new ResourceRecord(restBytes);
-            this.authorityRecords.push(authority);
-            restBytes = buf.slice(authority.length);
-        }
-
-        for (let i = 0; i < this.countAdditional; i ++) {
-            let additional = new ResourceRecord(restBytes);
-            this.authorityRecords.push(additional);
-            restBytes = buf.slice(additional.length);
-        }
-    }
-}
-
-const MESSAGE_HEADER_OFFSETS = {
-    'ID': [0, 16],
-    'QR' : [16, 17],
-    'OPCODE' : [17, 21],
-    'AA' : [21, 22],
-    'TC' : [22, 23],
-    'RD' : [23, 24],
-    'RA' : [24, 25],
-    'Z' : [25, 28],
-    'RCODE' : [28, 32],
-    'QDCOUNT' : [32, 48],
-    'ANCOUNT' : [48, 64],
-    'NSCOUNT' : [64, 80],
-    'ARCOUNT' : [80, 96],
-};
-
 /**
- * Message Header definition
+ * Reads the dns message from the buffer
  * 
- * RFC 1035 4.1.1
+ * @param {Buffer} buf
  */
-class MessageHeader {
-    constructor(buf) {
-        assert(buf instanceof Buffer, `argument is not a Buffer. got ${typeof buf}`);
-        assert(buf.length === 96, `expected header of lengh 96. go ${buf.length}`);
-        this._buffer = buf;
+function readMessage(buf) {
+    assert(buf instanceof Buffer, `argument is not a Buffer. got ${typeof buf}`);
+
+    const header = readMessageHeader(buf.slice(0, 12));
+
+    const countQuestions = header['qdcount'];
+    const countAnswers = header['ancount'];
+    const countAuthority = header['nscount'];
+    const countAdditional = header['arcount'];
+    const questionRecords = [];
+    const answerRecords = [];
+    const authorityRecords = [];
+    const additionalRecords = [];
+
+    let restBytes = buf.slice(12);
+
+    for (let i = 0; i < countQuestions; i++) {
+        let question = readQuestionSection(restBytes);
+        questionRecords.push(question);
+        restBytes = restBytes.slice(question['numBytes']);
     }
 
-    get(fieldName) {
-        assert(typeof fieldName === 'string', `expected string. got '${typeof fieldName}'`);
-
-        const offsets = MESSAGE_HEADER_OFFSETS[fieldName.toUpperCase()];
-        return this._buffer.slice(offsets[0], offsets[1]);
+    for (let i = 0; i < countAnswers; i++) {
+        let answer = readResourceRecord(restBytes);
+        answerRecords.push(answer);
+        restBytes = restBytes.slice(answer['numBytes']);
     }
+
+    for (let i = 0; i < countAuthority; i++) {
+        let authority = readResourceRecord(restBytes);
+        authorityRecords.push(authority);
+        restBytes = burestBytesf.slice(authority['numBytes']);
+    }
+
+    for (let i = 0; i < countAdditional; i++) {
+        let additional = readResourceRecord(restBytes);
+        additionalRecords.push(additional);
+        restBytes = restBytes.slice(additional['numBytes']);
+    }
+
+    return {
+        header,
+        questionRecords,
+        answerRecords,
+        authorityRecords,
+        additionalRecords,
+    };
 }
 
+ /**
+  * Reads the message header section from the buffer
+  * 
+  * RFC 1035 4.1.1
+  * 
+  * @param {Buffer} buf 
+  */
+function readMessageHeader(buf) {
+    const id = buf.readUInt16BE(0);
+    const temp = buf.readUInt16BE(2);
+
+    const qr =      (temp & 0b1000_0000_0000_0000) >> 15;
+    const opcode =  (temp & 0b0111_1000_0000_0000) >> 11;
+    const aa =      (temp & 0b0000_0100_0000_0000) >> 10;
+    const tc =      (temp & 0b0000_0010_0000_0000) >> 9;
+    const rd =      (temp & 0b0000_0001_0000_0000) >> 8;
+    const ra =      (temp & 0b0000_0000_1000_0000) >> 7;
+    const z =       (temp & 0b0000_0000_0111_0000) >> 4;
+    const rcode =   (temp & 0b0000_0000_0000_1111);
+
+    const qdcount = buf.readUInt16BE(4);
+    const ancount = buf.readUInt16BE(6);
+    const nscount = buf.readUInt16BE(8);
+    const arcount = buf.readUInt16BE(10);
+
+    return {
+        id,
+        qr,
+        opcode,
+        aa,
+        tc,
+        rd,
+        ra,
+        z,
+        rcode,
+        qdcount,
+        ancount,
+        nscount,
+        arcount,
+    };
+}
+
+
 /**
- * Question section definition
+ * Reads a question section from the buffer
  * 
  * RFC 1035 4.1.2
+ * 
+ * @param {Buffer} buf 
  */
-class QuestionSection {
-    constructor(buf) {
-        assert(buf instanceof Buffer, `expected Buffer. got ${typeof buf}`);
+function readQuestionSection(buf) {
+    assert(buf instanceof Buffer, `expected Buffer. got ${typeof buf}`);
 
-        this._buffer = buf;
+    const qNameFieldLength = computeNameFieldLength(buf);
+    const qname = buf.slice(0, qNameFieldLength);
+    const qtype = buf.slice(qNameFieldLength, qNameFieldLength + 2);
+    const qclass = buf.slice(qNameFieldLength + 2, qNameFieldLength + 4);
 
-        const qNameFieldLength = computeNameFieldLength(buf);
-
-        this._offsets = {
-            'QNAME' : [0, qNameFieldLength],
-            'QTYPE' : [qNameFieldLength, qNameFieldLength + 16],
-            'QCLASS' : [ qNameFieldLength + 16, qNameFieldLength + 32],
-        };
-
-        this.length = qNameFieldLength + 32;
-    }
-
-    get(fieldName) {
-        assert(typeof fieldName === 'string', `expected string. got '${typeof fieldName}'`);
-
-        const offsets = this._offsets[fieldName.toUpperCase()];
-
-        return this._buffer.slice(offsets[0], offsets[1]);
-    }
+    return {
+        'qname': qname.toString(),
+        qtype,
+        qclass,
+        numBytes: qNameFieldLength + 4,
+    };
 }
 
+/**
+ * Reads a resource record from the buffer
+ * 
+ * @param {Buffer} buf 
+ */
+function readResourceRecord(buf) {
+    assert(buf instanceof Buffer, `expected Buffer. got ${typeof buf}`);
+
+    const nameFieldLength = computeNameFieldLength(buf);
+
+    const name = buf.slice(0, nameFieldLength).toString();
+    const type = buf.slice(nameFieldLength, nameFieldLength + 2);
+    const clss = buf.slice(nameFieldLength + 2, nameFieldLength + 4);
+    const ttl = buf.slice(nameFieldLength + 4, nameFieldLength + 8);
+    const rdLength = buf.slice(nameFieldLength + 8, nameFieldLength + 10).readUInt16BE();
+    const rdata = buf.slice(nameFieldLength + 10, nameFieldLength + 10 + rdLength);
+    const numBytes = nameFieldLength + 10 + rdLength;
+
+    return {
+        name,
+        type,
+        'class': clss,
+        ttl,
+        rdLength,
+        rdata,
+        numBytes
+    };
+
+}
 
 /**
  * Resource record definition
@@ -158,7 +192,7 @@ class ResourceRecord {
 /**
  * Computes the length of the name field at the begining of the buffer
  * 
- * This is useful because name fields are usually of variable length 
+ * This is useful because name fields are of variable length 
  * @param {Buffer} buf 
  */
 function computeNameFieldLength(buf) {
@@ -176,4 +210,4 @@ function computeNameFieldLength(buf) {
     return nameLength;
 }
 
-export { MessageHeader, QuestionSection, ResourceRecord, computeNameFieldLength};
+export { ResourceRecord, computeNameFieldLength, readMessage };
