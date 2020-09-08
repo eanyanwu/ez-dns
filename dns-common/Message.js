@@ -109,13 +109,13 @@ function readMessageHeader(buf) {
 function readQuestionSection(buf) {
     assert(buf instanceof Buffer, `expected Buffer. got ${typeof buf}`);
 
-    const qNameFieldLength = computeNameFieldLength(buf);
-    const qname = buf.slice(0, qNameFieldLength);
+    const nameField = readNameField(buf);
+    const qNameFieldLength = nameField['nameLength'];
     const qtype = buf.slice(qNameFieldLength, qNameFieldLength + 2);
     const qclass = buf.slice(qNameFieldLength + 2, qNameFieldLength + 4);
 
     return {
-        'qname': qname.toString(),
+        'qname': nameField['name'],
         qtype,
         qclass,
         numBytes: qNameFieldLength + 4,
@@ -130,7 +130,8 @@ function readQuestionSection(buf) {
 function readResourceRecord(buf) {
     assert(buf instanceof Buffer, `expected Buffer. got ${typeof buf}`);
 
-    const nameFieldLength = computeNameFieldLength(buf);
+    const nameField = readNameField(buf);
+    const nameFieldLength = nameField['nameLength'];
 
     const name = buf.slice(0, nameFieldLength).toString();
     const type = buf.slice(nameFieldLength, nameFieldLength + 2);
@@ -141,7 +142,7 @@ function readResourceRecord(buf) {
     const numBytes = nameFieldLength + 10 + rdLength;
 
     return {
-        name,
+        'name': nameField['name'],
         type,
         'class': clss,
         ttl,
@@ -153,61 +154,41 @@ function readResourceRecord(buf) {
 }
 
 /**
- * Resource record definition
- * 
- * RFC 1035 4.1.3
- */
-class ResourceRecord {
-    constructor(buf) {
-        assert(buf instanceof Buffer, `expected Buffer. got ${typeof buf}`);
-
-        this._buffer = buf;
-
-        const nameFieldLength = computeNameFieldLength(buf);
-
-        this._offsets = {
-            'NAME' : [0, nameFieldLength],
-            'TYPE' : [nameFieldLength, nameFieldLength + 16],
-            'CLASS' : [nameFieldLength + 16, nameFieldLength + 32],
-            'TTL' : [nameFieldLength + 32, nameFieldLength + 64],
-            'RDLENGTH' : [nameFieldLength + 64, nameFieldLength + 80]
-        };
-
-        const rdLength = this._offsets['RDLENGTH'];
-
-        this._offsets['RDATA'] = [nameFieldLength + 80, nameFieldLength + 80 + rdLength]
-
-        this.length = nameFieldLength + 80 + rdLength;
-    }
-
-    get(fieldName) {
-        assert(typeof fieldName === 'string', `expected string. got '${typeof fieldName}'`);
-
-        const offsets = this._offsets[fieldName.toUpperCase()];
-
-        return this._buffer.slice(offsets[0], offsets[1]);
-    }
-}
-
-/**
- * Computes the length of the name field at the begining of the buffer
+ * Reads the name field at the begining of the buffer
  * 
  * This is useful because name fields are of variable length 
  * @param {Buffer} buf 
  */
-function computeNameFieldLength(buf) {
+function readNameField(buf) {
     assert(buf instanceof Buffer, `expected Buffer. got ${typeof buf}`);
 
     let nameLength = 0;
     let labelLength = 0;
+    let labels = [];
+
+    console.log(buf);
 
     do {
         labelLength = buf[nameLength];
 
         nameLength += labelLength + 1;
+
+        // Extract the label we just hopped over.
+        let label = buf.slice(nameLength - labelLength, nameLength).toString();
+
+        labels.push(label);
     } while (labelLength !== 0);
 
-    return nameLength;
+    let name = labels.join('.');
+
+    if (nameLength === 1) {
+        name = '.';
+    }
+
+    return {
+        name,
+        nameLength
+    };
 }
 
-export { ResourceRecord, computeNameFieldLength, readMessage };
+export { readNameField , readMessage };

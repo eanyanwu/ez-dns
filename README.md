@@ -2,8 +2,6 @@
 
 ## Intro
 
-The birth of the internet enabled computers to send data to each other. Like houses, each computer (or host) on the internet has an address (now known as an IP address) that identifies it. But wouldn't it be nice if instead of remembering a string of numbers, we could identify hosts more meaningfully? And so the concept of "domain names" was born. 
-
 In the days of old, the mapping of domain name to host IP address was centrally managed:
 
 > Currently hosts in the ARPA Internet are registered with the Network Information Center (NIC) and listed in a global table. The size of this table, and especially the frequency of updates to the table are near the limit of manageability. What is needed is a distributed database that performs the same function, and hence avoids the problems caused by a centralized database.  
