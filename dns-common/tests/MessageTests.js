@@ -1,5 +1,4 @@
 import pkg from 'chai';
-import url from 'url';
 import path from 'path';
 import fs from 'fs';
 
@@ -39,10 +38,17 @@ describe('Message', function() {
         expect(question['qname']).to.equal('github.com.');
     });
 
-    it.skip('should correctly parse a dns response', function() {
+    it('should correctly parse a dns response', function() {
         const dnsBytes = fs.readFileSync(`${__dirname}/sample-files/github-response.bin`);
         const msg = readMessage(dnsBytes);
 
-        console.log(msg);
+        expect(msg['answerRecords']).to.have.lengthOf(1);
+
+        const header = msg['header'];
+        const answer = msg['answerRecords'][0];
+
+        expect(header['qdcount']).to.equal(1);
+        expect(header['ancount']).to.equal(1);
+        expect(answer['name']).to.equal('github.com.');
     });
 });

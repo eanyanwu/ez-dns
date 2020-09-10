@@ -164,13 +164,14 @@ function readNameField(message, index = 0) {
     assert(message instanceof Buffer, `expected Buffer. got ${typeof message}`);
 
     let start = index;
-    const labels = [];
+    let labels = [];
     let labelLength = message[index];
 
-    while (labelLength != 0) {        
+    while (labelLength != 0) {
+        // 64 = 2^6 = First two bits are 0
         if (labelLength < 64) {
             // The +1s are because the actual label starts after the length octet
-            let label = message.slice(index + 1, index + 1 + labelLength);
+            let label = message.slice(index + 1, index + 1 + labelLength).toString();
     
             labels.push(label);
     
@@ -179,10 +180,21 @@ function readNameField(message, index = 0) {
     
             labelLength = message[index];
         }
-        // Compressed
+        // Compressed!
         else {
-            console.log("Compressed!");
-            // TODO: Name compression
+            let pointer = 0b0011_1111_1111_1111 & message.slice(index, index + 2).readUInt16BE();
+
+            // This is technically recursive, but in practice the recursion only goes one call frame deep.
+            let rest = readNameField(message, pointer)['labels'];
+
+            // Remove the last null label (we'll re-ad it outside the loop)
+            rest.pop();
+
+            labels = labels.concat(rest);
+
+            // Update the index so that once we break out, the `end` variable is still correct
+            index += 1;
+            break;
         }
     }
 
@@ -192,7 +204,8 @@ function readNameField(message, index = 0) {
     labels.push('');
 
     return {
-        'name': labels.join('.'),
+        'name': labels.length === 1 ? '.' : labels.join('.'),
+        'labels': labels,
         'nameLength': end - start + 1,
     };
 }
