@@ -39,7 +39,7 @@ describe('Message', function() {
         expect(question['qname']).to.equal('github.com.');
     });
 
-    it('should correctly parse a dns response', function() {
+    it.skip('should correctly parse a dns response', function() {
         const dnsBytes = fs.readFileSync(`${__dirname}/sample-files/github-response.bin`);
         const msg = readMessage(dnsBytes);
 

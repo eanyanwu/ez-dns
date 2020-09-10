@@ -21,30 +21,30 @@ function readMessage(buf) {
     const authorityRecords = [];
     const additionalRecords = [];
 
-    let restBytes = buf.slice(12);
+    let index = 12;
 
     for (let i = 0; i < countQuestions; i++) {
-        let question = readQuestionSection(restBytes);
+        let question = readQuestionSection(buf, index);
         questionRecords.push(question);
-        restBytes = restBytes.slice(question['numBytes']);
+        index += question['numBytes'];
     }
 
     for (let i = 0; i < countAnswers; i++) {
-        let answer = readResourceRecord(restBytes);
+        let answer = readResourceRecord(buf, index);
         answerRecords.push(answer);
-        restBytes = restBytes.slice(answer['numBytes']);
+        index += answer['numBytes'];
     }
-
+    
     for (let i = 0; i < countAuthority; i++) {
-        let authority = readResourceRecord(restBytes);
+        let authority = readResourceRecord(buf, index);
         authorityRecords.push(authority);
-        restBytes = burestBytesf.slice(authority['numBytes']);
+        index += authority['numBytes'];
     }
 
     for (let i = 0; i < countAdditional; i++) {
-        let additional = readResourceRecord(restBytes);
+        let additional = readResourceRecord(buf, index);
         additionalRecords.push(additional);
-        restBytes = restBytes.slice(additional['numBytes']);
+        index += additional['numBytes'];
     }
 
     return {
@@ -104,15 +104,16 @@ function readMessageHeader(buf) {
  * 
  * RFC 1035 4.1.2
  * 
- * @param {Buffer} buf 
+ * @param {Buffer} message - The message
+ * @param {number} index - The index at which the question section starts
  */
-function readQuestionSection(buf) {
-    assert(buf instanceof Buffer, `expected Buffer. got ${typeof buf}`);
+function readQuestionSection(message, index = 0) {
+    assert(message instanceof Buffer, `expected Buffer. got ${typeof message}`);
 
-    const nameField = readNameField(buf);
+    const nameField = readNameField(message, index);
     const qNameFieldLength = nameField['nameLength'];
-    const qtype = buf.slice(qNameFieldLength, qNameFieldLength + 2);
-    const qclass = buf.slice(qNameFieldLength + 2, qNameFieldLength + 4);
+    const qtype = message.slice(index + qNameFieldLength, index + qNameFieldLength + 2);
+    const qclass = message.slice(index + qNameFieldLength + 2, index + qNameFieldLength + 4);
 
     return {
         'qname': nameField['name'],
@@ -125,20 +126,20 @@ function readQuestionSection(buf) {
 /**
  * Reads a resource record from the buffer
  * 
- * @param {Buffer} buf 
+ * @param {Buffer} message - The message
+ * @param {number} index - The index at which the RR starts
  */
-function readResourceRecord(buf) {
-    assert(buf instanceof Buffer, `expected Buffer. got ${typeof buf}`);
+function readResourceRecord(message, index = 0) {
+    assert(message instanceof Buffer, `expected Buffer. got ${typeof message}`);
 
-    const nameField = readNameField(buf);
+    const nameField = readNameField(message, index);
     const nameFieldLength = nameField['nameLength'];
 
-    const name = buf.slice(0, nameFieldLength).toString();
-    const type = buf.slice(nameFieldLength, nameFieldLength + 2);
-    const clss = buf.slice(nameFieldLength + 2, nameFieldLength + 4);
-    const ttl = buf.slice(nameFieldLength + 4, nameFieldLength + 8);
-    const rdLength = buf.slice(nameFieldLength + 8, nameFieldLength + 10).readUInt16BE();
-    const rdata = buf.slice(nameFieldLength + 10, nameFieldLength + 10 + rdLength);
+    const type = message.slice(index + nameFieldLength, index + nameFieldLength + 2);
+    const clss = message.slice(index + nameFieldLength + 2, index + nameFieldLength + 4);
+    const ttl = message.slice(index + nameFieldLength + 4, index + nameFieldLength + 8);
+    const rdLength = message.slice(index + nameFieldLength + 8, index + nameFieldLength + 10).readUInt16BE();
+    const rdata = message.slice(index + nameFieldLength + 10, index + nameFieldLength + 10 + rdLength);
     const numBytes = nameFieldLength + 10 + rdLength;
 
     return {
@@ -150,44 +151,49 @@ function readResourceRecord(buf) {
         rdata,
         numBytes
     };
-
 }
 
 /**
- * Reads the name field at the begining of the buffer
+ * Reads the name field starting at the specified index.
+ * Message compression is handled according to RFC 1035 4.1.4
  * 
- * This is useful because name fields are of variable length 
- * @param {Buffer} buf 
+ * @param {Buffer} message - The message
+ * @param {number} index - The index at which to start reading a name field
  */
-function readNameField(buf) {
-    assert(buf instanceof Buffer, `expected Buffer. got ${typeof buf}`);
+function readNameField(message, index = 0) {
+    assert(message instanceof Buffer, `expected Buffer. got ${typeof message}`);
 
-    let nameLength = 0;
-    let labelLength = 0;
-    let labels = [];
+    let start = index;
+    const labels = [];
+    let labelLength = message[index];
 
-    console.log(buf);
-
-    do {
-        labelLength = buf[nameLength];
-
-        nameLength += labelLength + 1;
-
-        // Extract the label we just hopped over.
-        let label = buf.slice(nameLength - labelLength, nameLength).toString();
-
-        labels.push(label);
-    } while (labelLength !== 0);
-
-    let name = labels.join('.');
-
-    if (nameLength === 1) {
-        name = '.';
+    while (labelLength != 0) {        
+        if (labelLength < 64) {
+            // The +1s are because the actual label starts after the length octet
+            let label = message.slice(index + 1, index + 1 + labelLength);
+    
+            labels.push(label);
+    
+            // Set the value of index to the next length octet, which comes after our label.
+            index += labelLength + 1;
+    
+            labelLength = message[index];
+        }
+        // Compressed
+        else {
+            console.log("Compressed!");
+            // TODO: Name compression
+        }
     }
 
+    let end = index;
+
+    // The null label
+    labels.push('');
+
     return {
-        name,
-        nameLength
+        'name': labels.join('.'),
+        'nameLength': end - start + 1,
     };
 }
 
